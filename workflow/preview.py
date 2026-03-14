@@ -8,6 +8,14 @@ import re
 from datetime import datetime, timedelta
 from typing import Optional, List
 
+# Add local lib dir so dateutil resolves to the bundled copy
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'lib'))
+try:
+    from dateutil import parser as dateutil_parser
+    _HAS_DATEUTIL = True
+except ImportError:
+    _HAS_DATEUTIL = False
+
 def get_workflow_data_dir():
     """Get Alfred workflow data directory"""
     data_dir = os.getenv('alfred_workflow_data')
@@ -198,21 +206,24 @@ class EventPreview:
                 end_label = end_date.strftime("%b %-d") if end_date else range_match.group(2)
                 return f"{start_date.strftime('%A, %B %-d')} → {end_label}"
 
-        # Handle weekdays
-        for day in self.weekdays:
-            if day in text_lower:
-                target_date = self.get_next_weekday(day)
-                break
-
         # Handle relative dates
         if 'tomorrow' in text_lower:
             target_date = today + timedelta(days=1)
         elif 'next week' in text_lower:
             target_date = today + timedelta(days=7)
 
-        # Handle explicit dates like "March 20"
+        # Handle explicit dates like "March 20", "24 March", "Tuesday 24 March".
+        # This must run before bare weekday matching so "Tuesday 24 March" resolves
+        # to March 24, not next Tuesday.
         if not target_date:
             target_date = self.parse_explicit_date(text)
+
+        # Fall back to weekday-only matching (e.g., "meeting on Thursday")
+        if not target_date:
+            for day in self.weekdays:
+                if day in text_lower:
+                    target_date = self.get_next_weekday(day)
+                    break
 
         if not target_date:
             target_date = today

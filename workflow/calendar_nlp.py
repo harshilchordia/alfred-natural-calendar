@@ -601,8 +601,20 @@ class CalendarNLPProcessor:
             return today + timedelta(days=1)
         elif 'next week' in text_lower:
             return today + timedelta(days=7)
-        
-        # Handle specific weekdays
+
+        # Try fuzzy date parsing first — handles "March 20", "17 March", "Tuesday 24 March",
+        # etc. This must run before bare weekday matching so "Tuesday 24 March" resolves
+        # to March 24, not next Tuesday.
+        try:
+            parsed = parser.parse(text, default=today, fuzzy=True)
+            if parsed.date() != today.date():
+                if parsed.date() < today.date():
+                    parsed = parsed.replace(year=parsed.year + 1)
+                return parsed
+        except (ValueError, OverflowError):
+            pass
+
+        # Fall back to weekday-only matching (e.g., "meeting on Thursday")
         for day in self.weekday_map:
             if day in text_lower:
                 current_weekday = today.weekday()
@@ -611,14 +623,6 @@ class CalendarNLPProcessor:
                 if days_ahead == 0:  # If it's the same day, move to next week
                     days_ahead = 7
                 return today + timedelta(days=days_ahead)
-
-        # Try to extract an explicit date (e.g. "March 20", "17 March", "20/3")
-        try:
-            parsed = parser.parse(text, default=today, fuzzy=True)
-            if parsed.date() != today.date():
-                return parsed
-        except (ValueError, OverflowError):
-            pass
 
         return today
     
